@@ -1,0 +1,93 @@
+-
+  name: Setup E-commerce App
+  hosts: nodeb
+  tasks:
+    -  name: Installing necessary packages
+       yum:
+         name: '{{item}}'
+         state: present
+       loop:
+         -  httpd
+         -  mariadb-server
+         -  MySQL-python
+         -  git
+         -  php
+         -  php-mysql
+    -  name: Configuring apache
+       replace:
+         path: /etc/httpd/conf/httpd.conf
+         regexp: index.html
+         replace: index.php
+    -  name: Creating configuration file
+       file:
+         path: /etc/httpd/conf.d/kodekloud.conf
+         state: touch
+    -  name: Setting up virtual host
+       lineinfile:
+         dest: /etc/httpd/conf.d/kodekloud.conf
+         line: '{{item}}'
+       loop:
+         -  <virtualhost *:80>
+         -  servername nodeb.example.com
+         -  documentroot /var/www/html/kodekloud
+         -  </virtualhost>
+    -  name: Starting services
+       service:
+         name: '{{item}}'
+         state: restarted
+         enabled: yes
+       loop:
+         -  httpd
+         -  mariadb
+    -  name: Setting up firewall rules
+       firewalld:
+         service: '{{item}}'
+         state: enabled
+         permanent: yes
+         immediate: yes
+       loop:
+         -  http
+         -  mysql
+    -  name: Creating DB
+       community.mysql.mysql_db:
+         name: ecomdb
+         state: present
+    -  name: Creating DB user
+       community.mysql.mysql_user:
+         name: ecomuser
+         password: ecompassword
+         state: present
+         priv: '*.*:ALL'
+    -  name: Checking if tables already exist
+       shell: mysql ecomdb -Ns -e 'show tables;'
+       register: table_check
+    -  name: Creating tables
+       community.mysql.mysql_query:
+         login_db: ecomdb
+         query: CREATE TABLE products (id mediumint(8) unsigned NOT NULL auto_increment,Name varchar(255) default NULL,Price varchar(255) default NULL, ImageUrl varchar(255) default NULL,PRIMARY KEY (id)) AUTO_INCREMENT=1;
+       when: table_check.stdout.find('products') == -1
+    -  name: Checking if table is empty
+       shell: mysql ecomdb -Ns -e 'select * from products;'
+       register: op
+    -  name: Inserting data in the table
+       community.mysql.mysql_query:
+         login_db: ecomdb
+         query: INSERT INTO products (Name,Price,ImageUrl) VALUES ("Laptop","100","c-1.png"),("Drone","200","c-2.png"),("VR","300","c-3.png"),("Tablet","50","c-5.png"),("Watch","90","c-6.png"),("Phone Covers","20","c-7.png"),("Phone","80","c-8.png"),("Laptop","150","c-4.png");
+       when: op.stdout == ""
+    -  name: Create directory
+       file:
+         path: /var/www/html/kodekloud
+         state: directory
+    -  name: Check if repo is cloned or not
+       shell: ls /var/www/html/kodekloud
+       register: repo_check
+    -  name: Cloning git repo
+       git:
+         dest: /var/www/html/kodekloud
+         repo: https://github.com/kodekloudhub/learning-app-ecommerce.git
+       when: repo_check.stdout == ""
+    -  name: Editing index.php
+       replace:
+         path: /var/www/html/kodekloud/index.php
+         regexp: '172.20.1.101'
+         replace: 'localhost'
